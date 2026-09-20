@@ -1,4 +1,4 @@
-import { LogMethod } from "./log-method.js";
+import { wrapLogMethod } from "./log-method.js";
 function isMethodSelected(methodName, includeMethods, excludeMethods) {
     const included = !includeMethods ||
         includeMethods.length === 0 ||
@@ -27,22 +27,9 @@ export function LogClass(options = {}) {
             if (!descriptor || typeof descriptor.value !== "function") {
                 continue;
             }
-            const decorator = LogMethod({ ...options });
-            const wrapped = decorator(descriptor.value, {
-                kind: "method",
-                name: methodName,
-                static: false,
-                private: false,
-                access: {
-                    has: (instance) => methodName in instance,
-                    get: (instance) => instance[methodName],
-                },
-                metadata: undefined,
-                addInitializer: () => undefined,
-            });
             Object.defineProperty(prototype, methodName, {
                 ...descriptor,
-                value: wrapped,
+                value: wrapLogMethod(descriptor.value, methodName, options),
             });
         }
         return target;

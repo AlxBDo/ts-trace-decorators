@@ -12,8 +12,8 @@ export interface RuntimeDebugConfig {
     enabled?: boolean;
     namespaces?: string;
 }
-export interface LogContext<This = unknown> {
-    instance: This;
+export interface LogContext {
+    instance: unknown;
     args: unknown[];
     result?: unknown;
     error?: unknown;
@@ -21,13 +21,13 @@ export interface LogContext<This = unknown> {
     namespace: string;
     methodName: string;
 }
-export type CustomLogHandler<This = unknown> = (payload: LogContext<This>) => unknown;
+export type CustomLogHandler = (payload: LogContext) => unknown;
 export interface TraceEvent {
     status: "CALL" | "RESULT" | "ERROR" | "PERFORMANCE";
     payload: unknown;
     timestamp: string;
 }
-export interface CommonLogOptions<This = unknown> {
+export interface CommonLogOptions {
     enabled?: boolean;
     namespaces?: string;
     namespace?: string;
@@ -35,7 +35,7 @@ export interface CommonLogOptions<This = unknown> {
     logLevel?: LogLevel;
     traceMode?: "inline" | "grouped" | "both";
     tag?: string;
-    customLog?: CustomLogHandler<This>;
+    customLog?: CustomLogHandler;
 }
 export declare function getLogger(overrides?: Partial<LoggerLike>): LoggerLike;
 export declare function getRuntimeConfig(): RuntimeDebugConfig;

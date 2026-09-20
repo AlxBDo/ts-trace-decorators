@@ -2,10 +2,8 @@ import {
   type CommonLogOptions,
   type TraceEvent,
   getLogger,
-  getRuntimeConfig,
-  shouldEnableDebug,
 } from "../config.js";
-import { resolveNamespace, shouldLogNamespace } from "../utils/namespace.js";
+import { resolveDebugContext } from "../utils/debug-context.js";
 
 export interface LogPerformanceOptions extends CommonLogOptions {
   slowThresholdMs?: number;
@@ -65,20 +63,12 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
     const methodName = String(context.name);
 
     return function (this: TThis, ...args: TArgs): TReturn {
-      if (!shouldEnableDebug(options.enabled)) {
+      const debugContext = resolveDebugContext(this, methodName, options);
+      if (!debugContext.shouldLog) {
         return target.apply(this, args);
       }
 
-      const runtimeConfig = getRuntimeConfig();
-      const className =
-        (this as { constructor?: { name?: string } } | null)?.constructor?.name ??
-        "AnonymousClass";
-      const namespace = resolveNamespace(className, methodName, options.namespace);
-      const namespacesMask = options.namespaces ?? runtimeConfig.namespaces;
-
-      if (!shouldLogNamespace(namespace, namespacesMask)) {
-        return target.apply(this, args);
-      }
+      const { namespace } = debugContext;
 
       const trace: TraceEvent[] = [];
       const startedAt = nowMs();

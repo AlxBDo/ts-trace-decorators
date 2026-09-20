@@ -1,5 +1,5 @@
-import { getLogger, getRuntimeConfig, shouldEnableDebug, } from "../config.js";
-import { resolveNamespace, shouldLogNamespace } from "../utils/namespace.js";
+import { getLogger, } from "../config.js";
+import { resolveDebugContext } from "../utils/debug-context.js";
 function nowMs() {
     if (typeof performance !== "undefined" && typeof performance.now === "function") {
         return performance.now();
@@ -21,10 +21,9 @@ function emitPerformance(options, namespace, durationMs, trace, error) {
         logger.log({ namespace, ...payload });
         logger.groupEnd();
     }
-    if (options.traceMode === "grouped") {
-        return;
+    if (options.traceMode !== "grouped") {
+        logger.log(`[PERFORMANCE] ${namespace}`, payload);
     }
-    logger.log(`[PERFORMANCE] ${namespace}`, payload);
     if (typeof options.slowThresholdMs === "number" &&
         durationMs > options.slowThresholdMs) {
         logger.warn(`[SLOW] ${namespace} exceeded ${options.slowThresholdMs}ms`, payload);
@@ -34,23 +33,17 @@ export function LogPerformance(options = {}) {
     return function (target, context) {
         const methodName = String(context.name);
         return function (...args) {
-            if (!shouldEnableDebug(options.enabled)) {
+            const debugContext = resolveDebugContext(this, methodName, options);
+            if (!debugContext.shouldLog) {
                 return target.apply(this, args);
             }
-            const runtimeConfig = getRuntimeConfig();
-            const className = this?.constructor?.name ??
-                "AnonymousClass";
-            const namespace = resolveNamespace(className, methodName, options.namespace);
-            const namespacesMask = options.namespaces ?? runtimeConfig.namespaces;
-            if (!shouldLogNamespace(namespace, namespacesMask)) {
-                return target.apply(this, args);
-            }
+            const { namespace } = debugContext;
             const trace = [];
             const startedAt = nowMs();
             try {
                 const executionResult = target.apply(this, args);
                 if (isPromiseLike(executionResult)) {
-                    return executionResult
+                    return Promise.resolve(executionResult)
                         .then((resolved) => {
                         const durationMs = nowMs() - startedAt;
                         trace.push({
