@@ -1,0 +1,41 @@
+{
+  "name": "ts-debug-decorators",
+  "version": "0.1.0",
+  "description": "TypeScript Stage 3 decorators for debug logging and performance tracing",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "npm run build",
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/AlxBDo/ts-trace-decorators"
+  },
+  "keywords": [
+    "typescript",
+    "decorators",
+    "debug",
+    "logging",
+    "performance"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  }
+}
