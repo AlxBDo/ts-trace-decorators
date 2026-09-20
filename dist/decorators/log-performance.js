@@ -29,6 +29,21 @@ function emitPerformance(options, namespace, durationMs, trace, error) {
         logger.warn(`[SLOW] ${namespace} exceeded ${options.slowThresholdMs}ms`, payload);
     }
 }
+function runCustomLogSafely(options, payload, trace) {
+    if (!options.customLog) {
+        return;
+    }
+    try {
+        options.customLog(payload);
+    }
+    catch (customLogError) {
+        trace.push({
+            status: "ERROR",
+            payload: { customLogError },
+            timestamp: new Date().toISOString(),
+        });
+    }
+}
 export function LogPerformance(options = {}) {
     return function (target, context) {
         const methodName = String(context.name);
@@ -51,14 +66,14 @@ export function LogPerformance(options = {}) {
                             payload: { durationMs },
                             timestamp: new Date().toISOString(),
                         });
-                        options.customLog?.({
+                        runCustomLogSafely(options, {
                             instance: this,
                             args,
                             result: resolved,
                             durationMs,
                             namespace,
                             methodName,
-                        });
+                        }, trace);
                         emitPerformance(options, namespace, durationMs, trace);
                         return resolved;
                     })
@@ -69,14 +84,14 @@ export function LogPerformance(options = {}) {
                             payload: { durationMs, error },
                             timestamp: new Date().toISOString(),
                         });
-                        options.customLog?.({
+                        runCustomLogSafely(options, {
                             instance: this,
                             args,
                             error,
                             durationMs,
                             namespace,
                             methodName,
-                        });
+                        }, trace);
                         emitPerformance(options, namespace, durationMs, trace, error);
                         throw error;
                     });
@@ -87,14 +102,14 @@ export function LogPerformance(options = {}) {
                     payload: { durationMs },
                     timestamp: new Date().toISOString(),
                 });
-                options.customLog?.({
+                runCustomLogSafely(options, {
                     instance: this,
                     args,
                     result: executionResult,
                     durationMs,
                     namespace,
                     methodName,
-                });
+                }, trace);
                 emitPerformance(options, namespace, durationMs, trace);
                 return executionResult;
             }
@@ -105,14 +120,14 @@ export function LogPerformance(options = {}) {
                     payload: { durationMs, error },
                     timestamp: new Date().toISOString(),
                 });
-                options.customLog?.({
+                runCustomLogSafely(options, {
                     instance: this,
                     args,
                     error,
                     durationMs,
                     namespace,
                     methodName,
-                });
+                }, trace);
                 emitPerformance(options, namespace, durationMs, trace, error);
                 throw error;
             }

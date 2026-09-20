@@ -1,5 +1,6 @@
 import {
   type CommonLogOptions,
+  type LogContext,
   type TraceEvent,
   getLogger,
 } from "../config.js";
@@ -55,6 +56,26 @@ function emitPerformance(
   }
 }
 
+function runCustomLogSafely(
+  options: LogPerformanceOptions,
+  payload: LogContext,
+  trace: TraceEvent[],
+): void {
+  if (!options.customLog) {
+    return;
+  }
+
+  try {
+    options.customLog(payload);
+  } catch (customLogError) {
+    trace.push({
+      status: "ERROR",
+      payload: { customLogError },
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
 export function LogPerformance(options: LogPerformanceOptions = {}) {
   return function <TThis, TArgs extends unknown[], TReturn>(
     target: (this: TThis, ...args: TArgs) => TReturn,
@@ -69,7 +90,6 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
       }
 
       const { namespace } = debugContext;
-
       const trace: TraceEvent[] = [];
       const startedAt = nowMs();
 
@@ -86,14 +106,18 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
                 timestamp: new Date().toISOString(),
               });
 
-              options.customLog?.({
-                instance: this,
-                args,
-                result: resolved,
-                durationMs,
-                namespace,
-                methodName,
-              });
+              runCustomLogSafely(
+                options,
+                {
+                  instance: this,
+                  args,
+                  result: resolved,
+                  durationMs,
+                  namespace,
+                  methodName,
+                },
+                trace,
+              );
 
               emitPerformance(options, namespace, durationMs, trace);
               return resolved;
@@ -106,14 +130,18 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
                 timestamp: new Date().toISOString(),
               });
 
-              options.customLog?.({
-                instance: this,
-                args,
-                error,
-                durationMs,
-                namespace,
-                methodName,
-              });
+              runCustomLogSafely(
+                options,
+                {
+                  instance: this,
+                  args,
+                  error,
+                  durationMs,
+                  namespace,
+                  methodName,
+                },
+                trace,
+              );
 
               emitPerformance(options, namespace, durationMs, trace, error);
               throw error;
@@ -127,14 +155,18 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
           timestamp: new Date().toISOString(),
         });
 
-        options.customLog?.({
-          instance: this,
-          args,
-          result: executionResult,
-          durationMs,
-          namespace,
-          methodName,
-        });
+        runCustomLogSafely(
+          options,
+          {
+            instance: this,
+            args,
+            result: executionResult,
+            durationMs,
+            namespace,
+            methodName,
+          },
+          trace,
+        );
 
         emitPerformance(options, namespace, durationMs, trace);
         return executionResult;
@@ -146,14 +178,18 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
           timestamp: new Date().toISOString(),
         });
 
-        options.customLog?.({
-          instance: this,
-          args,
-          error,
-          durationMs,
-          namespace,
-          methodName,
-        });
+        runCustomLogSafely(
+          options,
+          {
+            instance: this,
+            args,
+            error,
+            durationMs,
+            namespace,
+            methodName,
+          },
+          trace,
+        );
 
         emitPerformance(options, namespace, durationMs, trace, error);
         throw error;

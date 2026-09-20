@@ -61,9 +61,10 @@ export function wrapLogMethod(target, methodName, options) {
             if (isPromiseLike(executionResult)) {
                 return Promise.resolve(executionResult)
                     .then((resolved) => {
+                    const sanitizedResult = sanitize(resolved, options);
                     if (options.result !== false) {
                         const payload = {
-                            result: sanitize(resolved, options),
+                            result: sanitizedResult,
                             custom: runCustomLog(options, {
                                 instance: this,
                                 args,
@@ -81,13 +82,14 @@ export function wrapLogMethod(target, methodName, options) {
                             emitInlineLog("RESULT", namespace, payload, options);
                         }
                     }
-                    finalize(sanitize(resolved, options), undefined);
+                    finalize(sanitizedResult, undefined);
                     return resolved;
                 })
                     .catch((err) => {
+                    const sanitizedError = sanitize(err, options);
                     if (options.error !== false) {
                         const payload = {
-                            error: sanitize(err, options),
+                            error: sanitizedError,
                             custom: runCustomLog(options, {
                                 instance: this,
                                 args,
@@ -105,13 +107,14 @@ export function wrapLogMethod(target, methodName, options) {
                             emitInlineLog("ERROR", namespace, payload, options);
                         }
                     }
-                    finalize(undefined, sanitize(err, options));
+                    finalize(undefined, sanitizedError);
                     throw err;
                 });
             }
+            const sanitizedResult = sanitize(executionResult, options);
             if (options.result !== false) {
                 const payload = {
-                    result: sanitize(executionResult, options),
+                    result: sanitizedResult,
                     custom: runCustomLog(options, {
                         instance: this,
                         args,
@@ -125,13 +128,14 @@ export function wrapLogMethod(target, methodName, options) {
                     emitInlineLog("RESULT", namespace, payload, options);
                 }
             }
-            finalize(sanitize(executionResult, options), undefined);
+            finalize(sanitizedResult, undefined);
             return executionResult;
         }
         catch (err) {
+            const sanitizedError = sanitize(err, options);
             if (options.error !== false) {
                 const payload = {
-                    error: sanitize(err, options),
+                    error: sanitizedError,
                     custom: runCustomLog(options, {
                         instance: this,
                         args,
@@ -145,7 +149,7 @@ export function wrapLogMethod(target, methodName, options) {
                     emitInlineLog("ERROR", namespace, payload, options);
                 }
             }
-            finalize(undefined, sanitize(err, options));
+            finalize(undefined, sanitizedError);
             throw err;
         }
     };

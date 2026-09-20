@@ -1,6 +1,6 @@
 # ts-debug-decorators
 
-Décorateurs TypeScript (TS 5.0+ / Stage 3) pour le logging d'exécution, la mesure de performance et la traçabilité.
+TypeScript decorators (TS 5.0+ / ECMAScript Stage 3) for execution logging, traceability, and performance analysis in web applications.
 
 ## Installation
 
@@ -8,24 +8,40 @@ Décorateurs TypeScript (TS 5.0+ / Stage 3) pour le logging d'exécution, la mes
 npm install ts-debug-decorators
 ```
 
-## API
+## Public API
 
 - `@LogMethod(options?)`
 - `@LogPerformance(options?)`
 - `@LogClass(options?)`
 - `sanitize(value, options?)`
 
-## Features principales
+## Key Features
 
-- Logs `[CALL]`, `[RESULT]`, `[ERROR]` pour méthodes sync/async
-- Mesure de durée avec `performance.now()` et alerte lenteur (`slowThresholdMs`)
-- Obfuscation récursive des clés sensibles (`***MASKED***`)
-- Toggle runtime via `globalThis.IS_DEBUG_ENABLED` ou `globalThis.DEBUG_CONFIG`
-- Filtrage namespace via `globalThis.DEBUG_NAMESPACES` (`auth:*`, `-auth:sensitive`)
-- Personnalisation de sortie console (`log`, `table`, `warn`, `error`, `group`)
-- Mode de traces groupées avec sortie `Debug #tag`
+- `[CALL]`, `[RESULT]`, and `[ERROR]` logs for sync and async methods
+- Accurate execution duration with `performance.now()` and slow-call warning (`slowThresholdMs`)
+- Recursive sensitive-data masking (`***MASKED***`)
+- Runtime toggle via `globalThis.IS_DEBUG_ENABLED` or `globalThis.DEBUG_CONFIG`
+- Namespace filtering via `globalThis.DEBUG_NAMESPACES` (`auth:*`, `-auth:sensitive`)
+- Customizable console output (`log`, `table`, `warn`, `error`, `group`)
+- Grouped trace output (`Debug #tag`) with trace payload aggregation
 
-## Exemple rapide
+
+## TypeScript Setup
+
+Enable Stage 3 decorators in your `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "ESNext.Decorators"]
+  }
+}
+```
+
+## Quick Example
 
 ```ts
 import { LogClass, LogMethod, LogPerformance } from "ts-debug-decorators";

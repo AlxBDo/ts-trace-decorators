@@ -104,9 +104,11 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
       if (isPromiseLike(executionResult)) {
         return Promise.resolve(executionResult)
           .then((resolved) => {
+            const sanitizedResult = sanitize(resolved, options);
+
             if (options.result !== false) {
               const payload = {
-                result: sanitize(resolved, options),
+                result: sanitizedResult,
                 custom: runCustomLog(options, {
                   instance: this,
                   args,
@@ -126,13 +128,15 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
               }
             }
 
-            finalize(sanitize(resolved, options), undefined);
+            finalize(sanitizedResult, undefined);
             return resolved;
           })
           .catch((err: unknown) => {
+            const sanitizedError = sanitize(err, options);
+
             if (options.error !== false) {
               const payload = {
-                error: sanitize(err, options),
+                error: sanitizedError,
                 custom: runCustomLog(options, {
                   instance: this,
                   args,
@@ -152,14 +156,16 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
               }
             }
 
-            finalize(undefined, sanitize(err, options));
+            finalize(undefined, sanitizedError);
             throw err;
           }) as TReturn;
       }
 
+      const sanitizedResult = sanitize(executionResult, options);
+
       if (options.result !== false) {
         const payload = {
-          result: sanitize(executionResult, options),
+          result: sanitizedResult,
           custom: runCustomLog(options, {
             instance: this,
             args,
@@ -175,12 +181,14 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
         }
       }
 
-      finalize(sanitize(executionResult, options), undefined);
+      finalize(sanitizedResult, undefined);
       return executionResult;
     } catch (err) {
+      const sanitizedError = sanitize(err, options);
+
       if (options.error !== false) {
         const payload = {
-          error: sanitize(err, options),
+          error: sanitizedError,
           custom: runCustomLog(options, {
             instance: this,
             args,
@@ -196,7 +204,7 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
         }
       }
 
-      finalize(undefined, sanitize(err, options));
+      finalize(undefined, sanitizedError);
       throw err;
     }
   };
