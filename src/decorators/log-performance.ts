@@ -1,10 +1,7 @@
-import {
-  type CommonLogOptions,
-  type LogContext,
-  type TraceEvent,
-  getLogger,
-} from "../config.js";
-import { resolveDebugContext } from "../utils/debug-context.js";
+import { getLogger } from "../config.js";
+import type { CommonLogOptions, LogContext, TraceEvent } from "../types/index.js";
+import { formatLabel, resolveDebugContext } from "../utils/debug-context.js";
+import { enterScope, exitScope, pushEvent, type TraceScope } from "../utils/trace-scope.js";
 
 export interface LogPerformanceOptions extends CommonLogOptions {
   slowThresholdMs?: number;
@@ -30,36 +27,44 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 function emitPerformance(
   options: LogPerformanceOptions,
   namespace: string,
+  tag: string,
+  correlationId: string | undefined,
   durationMs: number,
-  trace: TraceEvent[],
+  trace: TraceEvent[] | undefined,
   error?: unknown,
 ): void {
   const logger = getLogger(options.logger);
+  const label = formatLabel(namespace, correlationId);
   const payload = { durationMs, trace, error };
 
-  if (options.traceMode === "grouped" || options.traceMode === "both") {
-    const tag = options.tag ?? namespace;
-    logger.groupCollapsed(`Debug #${tag}`);
-    logger.log({ namespace, ...payload });
+  if (
+    (options.traceMode === "grouped" || options.traceMode === "both") &&
+    trace
+  ) {
+    logger.groupCollapsed(`Debug #${formatLabel(tag, correlationId)}`);
+    logger.log({ namespace, correlationId, ...payload });
     logger.groupEnd();
   }
 
   if (options.traceMode !== "grouped") {
-    logger.log(`[PERFORMANCE] ${namespace}`, payload);
+    logger.log(`[PERFORMANCE] ${label}`, { durationMs, error });
   }
 
   if (
     typeof options.slowThresholdMs === "number" &&
     durationMs > options.slowThresholdMs
   ) {
-    logger.warn(`[SLOW] ${namespace} exceeded ${options.slowThresholdMs}ms`, payload);
+    logger.warn(`[SLOW] ${label} exceeded ${options.slowThresholdMs}ms`, {
+      durationMs,
+      error,
+    });
   }
 }
 
 function runCustomLogSafely(
   options: LogPerformanceOptions,
   payload: LogContext,
-  trace: TraceEvent[],
+  scope: TraceScope,
 ): void {
   if (!options.customLog) {
     return;
@@ -68,7 +73,7 @@ function runCustomLogSafely(
   try {
     options.customLog(payload);
   } catch (customLogError) {
-    trace.push({
+    pushEvent(scope, {
       status: "ERROR",
       payload: { customLogError },
       timestamp: new Date().toISOString(),
@@ -84,13 +89,13 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
     const methodName = String(context.name);
 
     return function (this: TThis, ...args: TArgs): TReturn {
-      const debugContext = resolveDebugContext(this, methodName, options);
+      const debugContext = resolveDebugContext(this, methodName, options, args);
       if (!debugContext.shouldLog) {
         return target.apply(this, args);
       }
 
-      const { namespace } = debugContext;
-      const trace: TraceEvent[] = [];
+      const { namespace, tag, correlationId } = debugContext;
+      const scope = enterScope(correlationId);
       const startedAt = nowMs();
 
       try {
@@ -100,9 +105,9 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
           return Promise.resolve(executionResult)
             .then((resolved) => {
               const durationMs = nowMs() - startedAt;
-              trace.push({
+              pushEvent(scope, {
                 status: "PERFORMANCE",
-                payload: { durationMs },
+                payload: { durationMs, namespace },
                 timestamp: new Date().toISOString(),
               });
 
@@ -115,18 +120,26 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
                   durationMs,
                   namespace,
                   methodName,
+                  correlationId,
                 },
-                trace,
+                scope,
               );
 
-              emitPerformance(options, namespace, durationMs, trace);
+              emitPerformance(
+                options,
+                namespace,
+                tag,
+                correlationId,
+                durationMs,
+                exitScope(scope, correlationId),
+              );
               return resolved;
             })
             .catch((error: unknown) => {
               const durationMs = nowMs() - startedAt;
-              trace.push({
+              pushEvent(scope, {
                 status: "PERFORMANCE",
-                payload: { durationMs, error },
+                payload: { durationMs, error, namespace },
                 timestamp: new Date().toISOString(),
               });
 
@@ -139,19 +152,28 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
                   durationMs,
                   namespace,
                   methodName,
+                  correlationId,
                 },
-                trace,
+                scope,
               );
 
-              emitPerformance(options, namespace, durationMs, trace, error);
+              emitPerformance(
+                options,
+                namespace,
+                tag,
+                correlationId,
+                durationMs,
+                exitScope(scope, correlationId),
+                error,
+              );
               throw error;
             }) as TReturn;
         }
 
         const durationMs = nowMs() - startedAt;
-        trace.push({
+        pushEvent(scope, {
           status: "PERFORMANCE",
-          payload: { durationMs },
+          payload: { durationMs, namespace },
           timestamp: new Date().toISOString(),
         });
 
@@ -164,17 +186,25 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
             durationMs,
             namespace,
             methodName,
+            correlationId,
           },
-          trace,
+          scope,
         );
 
-        emitPerformance(options, namespace, durationMs, trace);
+        emitPerformance(
+          options,
+          namespace,
+          tag,
+          correlationId,
+          durationMs,
+          exitScope(scope, correlationId),
+        );
         return executionResult;
       } catch (error) {
         const durationMs = nowMs() - startedAt;
-        trace.push({
+        pushEvent(scope, {
           status: "PERFORMANCE",
-          payload: { durationMs, error },
+          payload: { durationMs, error, namespace },
           timestamp: new Date().toISOString(),
         });
 
@@ -187,11 +217,20 @@ export function LogPerformance(options: LogPerformanceOptions = {}) {
             durationMs,
             namespace,
             methodName,
+            correlationId,
           },
-          trace,
+          scope,
         );
 
-        emitPerformance(options, namespace, durationMs, trace, error);
+        emitPerformance(
+          options,
+          namespace,
+          tag,
+          correlationId,
+          durationMs,
+          exitScope(scope, correlationId),
+          error,
+        );
         throw error;
       }
     };

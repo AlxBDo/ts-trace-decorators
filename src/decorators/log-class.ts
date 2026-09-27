@@ -5,7 +5,7 @@ export interface LogClassOptions extends LogMethodOptions {
   excludeMethods?: Array<string | RegExp>;
 }
 
-const WRAPPED_METHOD_MARKER = Symbol("ts-debug-decorators:wrapped");
+const WRAPPED_METHOD_MARKER = Symbol("ts-trace-decorators:wrapped");
 
 type WrappedMethod = ((...args: unknown[]) => unknown) & {
   [WRAPPED_METHOD_MARKER]?: boolean;
@@ -89,6 +89,13 @@ export function LogClass(options: LogClassOptions = {}) {
     _context: ClassDecoratorContext<TClass>,
   ): TClass {
     const Decorated = class extends target {};
+
+    // Without this the subclass reports `Decorated`, which corrupts namespace
+    // resolution, `instance.constructor.name` and devtools display.
+    Object.defineProperty(Decorated, "name", {
+      value: target.name,
+      configurable: true,
+    });
 
     wrapPrototypeMethods(
       target.prototype as Record<string, unknown>,

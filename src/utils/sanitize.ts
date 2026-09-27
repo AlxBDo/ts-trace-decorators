@@ -13,7 +13,15 @@ const DEFAULT_SENSITIVE_KEYS = [
 export interface SanitizeOptions {
   mask?: string;
   sensitiveKeys?: string[];
+  /**
+   * Traversal depth limit. Guards against very deep or getter-backed graphs
+   * (reactive proxies, ORM entities) whose full traversal would be costly or
+   * trigger side effects.
+   */
+  maxDepth?: number;
 }
+
+export const DEFAULT_MAX_DEPTH = 8;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object") {
@@ -34,6 +42,8 @@ function sanitizeInternal<T>(
   sensitiveKeys: Set<string>,
   inProgress: WeakSet<object>,
   memo: WeakMap<object, unknown>,
+  maxDepth: number,
+  depth: number,
 ): T {
   if (input === null || typeof input !== "object") {
     return input;
@@ -43,6 +53,10 @@ function sanitizeInternal<T>(
     Array.isArray(input) || isPlainObject(input) || isErrorObject(input);
   if (!isTraversable) {
     return input;
+  }
+
+  if (depth >= maxDepth) {
+    return "[MaxDepth]" as T;
   }
 
   const source = input as object;
@@ -61,7 +75,17 @@ function sanitizeInternal<T>(
     memo.set(source, output);
 
     for (const item of input) {
-      output.push(sanitizeInternal(item, mask, sensitiveKeys, inProgress, memo));
+      output.push(
+        sanitizeInternal(
+          item,
+          mask,
+          sensitiveKeys,
+          inProgress,
+          memo,
+          maxDepth,
+          depth + 1,
+        ),
+      );
     }
 
     inProgress.delete(source);
@@ -86,7 +110,15 @@ function sanitizeInternal<T>(
       continue;
     }
 
-    output[key] = sanitizeInternal(value, mask, sensitiveKeys, inProgress, memo);
+    output[key] = sanitizeInternal(
+      value,
+      mask,
+      sensitiveKeys,
+      inProgress,
+      memo,
+      maxDepth,
+      depth + 1,
+    );
   }
 
   inProgress.delete(source);
@@ -96,7 +128,9 @@ function sanitizeInternal<T>(
 export function sanitize<T>(input: T, options: SanitizeOptions = {}): T {
   const mask = options.mask ?? "***MASKED***";
   const sensitiveKeys = new Set(
-    (options.sensitiveKeys ?? DEFAULT_SENSITIVE_KEYS).map((key) => key.toLowerCase()),
+    (options.sensitiveKeys ?? DEFAULT_SENSITIVE_KEYS).map((key) =>
+      key.toLowerCase(),
+    ),
   );
 
   return sanitizeInternal(
@@ -105,5 +139,7 @@ export function sanitize<T>(input: T, options: SanitizeOptions = {}): T {
     sensitiveKeys,
     new WeakSet<object>(),
     new WeakMap<object, unknown>(),
+    options.maxDepth ?? DEFAULT_MAX_DEPTH,
+    0,
   );
 }

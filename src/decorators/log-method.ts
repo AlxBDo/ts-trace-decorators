@@ -1,10 +1,17 @@
+import { getLogger } from "../config.js";
+import type {
+  CommonLogOptions,
+  LogContext,
+  TraceEvent,
+  TraceStatus,
+} from "../types/index.js";
+import { formatLabel, resolveDebugContext } from "../utils/debug-context.js";
 import {
-  type CommonLogOptions,
-  type LogContext,
-  type TraceEvent,
-  getLogger,
-} from "../config.js";
-import { resolveDebugContext } from "../utils/debug-context.js";
+  enterScope,
+  exitScope,
+  pushEvent,
+  type TraceScope,
+} from "../utils/trace-scope.js";
 import { sanitize, type SanitizeOptions } from "../utils/sanitize.js";
 
 export interface LogMethodOptions extends CommonLogOptions, SanitizeOptions {
@@ -35,34 +42,43 @@ function runCustomLog(options: LogMethodOptions, payload: LogContext): unknown {
 }
 
 function emitInlineLog(
-  status: "CALL" | "RESULT" | "ERROR",
-  namespace: string,
+  status: Exclude<TraceStatus, "PERFORMANCE">,
+  label: string,
   payload: unknown,
   options: LogMethodOptions,
 ): void {
   const logger = getLogger(options.logger);
 
   if (status === "ERROR") {
-    logger.error(`[ERROR] ${namespace}`, payload);
+    logger.error(`[ERROR] ${label}`, payload);
     return;
   }
 
   const level = options.logLevel ?? "log";
-  logger[level](`[${status}] ${namespace}`, payload);
+  logger[level](`[${status}] ${label}`, payload);
 }
 
 function emitGroupedTrace(
   namespace: string,
+  tag: string,
+  correlationId: string | undefined,
   options: LogMethodOptions,
   trace: TraceEvent[],
+  truncated: boolean,
   result: unknown,
   error: unknown,
 ): void {
   const logger = getLogger(options.logger);
-  const tag = options.tag ?? namespace;
 
-  logger.groupCollapsed(`Debug #${tag}`);
-  logger.log({ namespace, trace, result, error });
+  logger.groupCollapsed(`Debug #${formatLabel(tag, correlationId)}`);
+  logger.log({
+    namespace,
+    correlationId,
+    trace,
+    ...(truncated ? { truncated } : {}),
+    result,
+    error,
+  });
   logger.groupEnd();
 }
 
@@ -72,30 +88,52 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
   options: LogMethodOptions,
 ): (this: TThis, ...args: TArgs) => TReturn {
   return function (this: TThis, ...args: TArgs): TReturn {
-    const debugContext = resolveDebugContext(this, methodName, options);
+    const debugContext = resolveDebugContext(this, methodName, options, args);
     if (!debugContext.shouldLog) {
       return target.apply(this, args);
     }
 
-    const { namespace } = debugContext;
+    const { namespace, tag, correlationId } = debugContext;
+    const label = formatLabel(namespace, correlationId);
 
-    const trace: TraceEvent[] = [];
     const mode = options.traceMode ?? "inline";
+    const scope: TraceScope = enterScope(correlationId);
     const sanitizedArgs = sanitize(args, options);
 
+    const record = (status: TraceStatus, payload: unknown): void => {
+      pushEvent(scope, {
+        status,
+        payload,
+        timestamp: new Date().toISOString(),
+      });
+    };
+
     if (options.call !== false) {
-      const payload = { args: sanitizedArgs };
-      trace.push({ status: "CALL", payload, timestamp: new Date().toISOString() });
+      const payload = { args: sanitizedArgs, namespace };
+      record("CALL", payload);
 
       if (mode === "inline" || mode === "both") {
-        emitInlineLog("CALL", namespace, payload, options);
+        emitInlineLog("CALL", label, payload, options);
       }
     }
 
     const finalize = (result: unknown, error: unknown): void => {
-      if (mode === "grouped" || mode === "both") {
-        emitGroupedTrace(namespace, options, trace, result, error);
+      const aggregated = exitScope(scope, correlationId);
+
+      if (!aggregated || (mode !== "grouped" && mode !== "both")) {
+        return;
       }
+
+      emitGroupedTrace(
+        namespace,
+        tag,
+        correlationId,
+        options,
+        aggregated,
+        scope.truncated,
+        result,
+        error,
+      );
     };
 
     try {
@@ -109,22 +147,20 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
             if (options.result !== false) {
               const payload = {
                 result: sanitizedResult,
+                namespace,
                 custom: runCustomLog(options, {
                   instance: this,
                   args,
                   result: resolved,
                   namespace,
                   methodName,
+                  correlationId,
                 }),
               };
-              trace.push({
-                status: "RESULT",
-                payload,
-                timestamp: new Date().toISOString(),
-              });
+              record("RESULT", payload);
 
               if (mode === "inline" || mode === "both") {
-                emitInlineLog("RESULT", namespace, payload, options);
+                emitInlineLog("RESULT", label, payload, options);
               }
             }
 
@@ -137,22 +173,20 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
             if (options.error !== false) {
               const payload = {
                 error: sanitizedError,
+                namespace,
                 custom: runCustomLog(options, {
                   instance: this,
                   args,
                   error: err,
                   namespace,
                   methodName,
+                  correlationId,
                 }),
               };
-              trace.push({
-                status: "ERROR",
-                payload,
-                timestamp: new Date().toISOString(),
-              });
+              record("ERROR", payload);
 
               if (mode === "inline" || mode === "both") {
-                emitInlineLog("ERROR", namespace, payload, options);
+                emitInlineLog("ERROR", label, payload, options);
               }
             }
 
@@ -166,18 +200,20 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
       if (options.result !== false) {
         const payload = {
           result: sanitizedResult,
+          namespace,
           custom: runCustomLog(options, {
             instance: this,
             args,
             result: executionResult,
             namespace,
             methodName,
+            correlationId,
           }),
         };
-        trace.push({ status: "RESULT", payload, timestamp: new Date().toISOString() });
+        record("RESULT", payload);
 
         if (mode === "inline" || mode === "both") {
-          emitInlineLog("RESULT", namespace, payload, options);
+          emitInlineLog("RESULT", label, payload, options);
         }
       }
 
@@ -189,18 +225,20 @@ export function wrapLogMethod<TThis, TArgs extends unknown[], TReturn>(
       if (options.error !== false) {
         const payload = {
           error: sanitizedError,
+          namespace,
           custom: runCustomLog(options, {
             instance: this,
             args,
             error: err,
             namespace,
             methodName,
+            correlationId,
           }),
         };
-        trace.push({ status: "ERROR", payload, timestamp: new Date().toISOString() });
+        record("ERROR", payload);
 
         if (mode === "inline" || mode === "both") {
-          emitInlineLog("ERROR", namespace, payload, options);
+          emitInlineLog("ERROR", label, payload, options);
         }
       }
 
